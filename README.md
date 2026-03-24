@@ -108,7 +108,7 @@ pytest tests/ -v --cov=agentwarden
 
 ## Research Context
 
-Part of the [ActivGuard](https://github.com/Tbhuvan/activguard) research programme. AgentWarden provides the experimental platform for prompt injection detection in multi-agent systems (RQ3), extending activation probing from code generation to agentic AI security.
+Part of the [ActivGuard](https://github.com/Tbhuvan/activguard) research programme. AgentWarden extends the security problem from single-model code generation to multi-agent pipelines — where collusion across agent steps can introduce vulnerabilities invisible to single-output scanners.
 
 ### Research Questions
 
