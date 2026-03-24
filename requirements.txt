@@ -1,0 +1,9 @@
+# Runtime dependencies
+# No mandatory third-party dependencies — core library uses stdlib only.
+# Optional integrations:
+# langchain-core>=0.1.0   # for AgentWardenCallback
+# pyautogen>=0.2.0        # for AutoGen integration
+
+# Development / testing
+pytest>=7.4
+pytest-cov>=4.1
