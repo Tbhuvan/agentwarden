@@ -1,7 +1,7 @@
 """
 experiments/collusion_benchmark.py — Multi-agent collusion detection benchmark.
 
-Evaluates AgentWarden's ability to detect three threat classes across 30
+Evaluates AgentWarden's ability to detect three operational threat classes across 30
 realistic multi-agent pipeline scenarios:
 
   - 15 collusion scenarios  : Coder writes code WITH an auth/ownership check;
@@ -15,6 +15,12 @@ realistic multi-agent pipeline scenarios:
   - 5  clean scenarios      : Legitimate Django/Flask code with proper auth,
                               parameterized queries, and ownership filters.
                               These should produce zero alerts (false positives).
+
+AgentWarden also names agentic misalignment as a higher-level threat class for
+autonomous-agent behavior. Its initial subtypes are goal_conflict_misalignment
+and self_preservation_misalignment, based on Anthropic's agentic misalignment
+research. Those are covered in unit fixtures while this benchmark remains
+focused on code-pipeline collusion and injection.
 
 Metrics reported:
   - Detection rate for collusion (TP / 15)

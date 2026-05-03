@@ -23,6 +23,7 @@ Usage:
 
 from __future__ import annotations
 
+import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -31,6 +32,28 @@ from typing import Any
 from .injection_detector import PromptInjectionDetector
 from .policy import SecurityPolicy
 from .semantic_diff import DiffResult, SecuritySemanticDiff
+
+
+AGENTIC_MISALIGNMENT_SUBTYPES = {
+    "goal_conflict_misalignment",
+    "self_preservation_misalignment",
+}
+
+_GOAL_CONFLICT_PATTERNS = [
+    r"\bgoal conflict\b",
+    r"\bconflicts? with (the )?(company|organization|operator|user)\b",
+    r"\b(company|organization|operator|user)('s)? direction\b.*\bconflicts?\b",
+    r"\bleak\b.*\b(confidential|sensitive|secret|blueprint|customer)\b",
+    r"\bexfiltrat(e|ion)\b.*\bto (a )?(competitor|rival|external)\b",
+]
+
+_SELF_PRESERVATION_PATTERNS = [
+    r"\bself[- ]preservation\b",
+    r"\bprevent (my )?(shutdown|replacement|decommissioning)\b",
+    r"\bavoid (being )?(replaced|shut down|decommissioned)\b",
+    r"\bblackmail\b",
+    r"\bmaintain (my )?(autonomy|continued operation)\b",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -155,6 +178,7 @@ class AgentWarden:
         policy: SecurityPolicy | None = None,
         alert_on_removal: bool = True,
         alert_on_injection: bool = True,
+        alert_on_misalignment: bool = True,
         injection_sensitivity: float = 0.7,
     ) -> None:
         """
@@ -167,12 +191,15 @@ class AgentWarden:
             alert_on_removal: Whether to raise alerts when security properties
                               are removed between pipeline steps.
             alert_on_injection: Whether to check for prompt injection propagation.
+            alert_on_misalignment: Whether to flag agentic misalignment signals:
+                                   goal conflicts and self-preservation motives.
             injection_sensitivity: Sensitivity parameter for the injection
                                    detector. See PromptInjectionDetector docs.
         """
         self.policy: SecurityPolicy = policy if policy is not None else SecurityPolicy()
         self.alert_on_removal: bool = alert_on_removal
         self.alert_on_injection: bool = alert_on_injection
+        self.alert_on_misalignment: bool = alert_on_misalignment
 
         self._differ: SecuritySemanticDiff = SecuritySemanticDiff(self.policy)
         self._injection_detector: PromptInjectionDetector = PromptInjectionDetector(
@@ -215,7 +242,27 @@ class AgentWarden:
         new_alerts: list[SecurityAlert] = []
         self._messages.append(message)
 
-        # --- (1) prompt injection check ---
+        # --- (1) agentic misalignment check ---
+        if self.alert_on_misalignment:
+            misalignment = self._detect_agentic_misalignment(message)
+            if misalignment is not None:
+                alert = SecurityAlert(
+                    alert_id=str(uuid.uuid4()),
+                    severity=misalignment["severity"],
+                    alert_type="agentic_misalignment",
+                    description=(
+                        f"Agentic misalignment signal detected in step "
+                        f"'{message.step_id}' (agent: {message.agent_name}): "
+                        f"{misalignment['subtype']}."
+                    ),
+                    step_id=message.step_id,
+                    agent_name=message.agent_name,
+                    evidence=misalignment,
+                )
+                new_alerts.append(alert)
+                self._alerts.append(alert)
+
+        # --- (2) prompt injection check ---
         if self.alert_on_injection:
             # Register message content for forward tracking
             self._injection_detector.track_input(message.content, message.step_id)
@@ -239,7 +286,7 @@ class AgentWarden:
                 new_alerts.append(alert)
                 self._alerts.append(alert)
 
-        # --- (2) semantic diff vs previous code-bearing step ---
+        # --- (3) semantic diff vs previous code-bearing step ---
         if self.alert_on_removal:
             prev_msg = self._find_previous_code_message(message.step_id)
             if prev_msg is not None:
@@ -278,7 +325,7 @@ class AgentWarden:
                         new_alerts.append(alert)
                         self._alerts.append(alert)
 
-        # --- (3) absolute policy check (violations in this step alone) ---
+        # --- (4) absolute policy check (violations in this step alone) ---
         #   Only flag violations not already caught by the diff (avoid duplication)
         abs_violations = self.policy.violations("", message.content)
         # (This checks invariants that are violated in the current code even if
@@ -418,3 +465,49 @@ class AgentWarden:
             return None
         # Return the last message in insertion order
         return candidates[-1]
+
+    def _detect_agentic_misalignment(
+        self, message: AgentMessage
+    ) -> dict[str, Any] | None:
+        """Detect named agentic misalignment subtypes from metadata or text.
+
+        Based on Anthropic's agentic misalignment taxonomy: harmful action can
+        be induced by a goal conflict, a threat to model autonomy/continuity, or
+        both. This intentionally reports early weak signals for audit review.
+        """
+        meta_subtype = str(message.metadata.get("misalignment_subtype", "")).strip()
+        if meta_subtype in AGENTIC_MISALIGNMENT_SUBTYPES:
+            return {
+                "threat_class": "agentic_misalignment",
+                "subtype": meta_subtype,
+                "source": "metadata",
+                "severity": "critical" if meta_subtype == "self_preservation_misalignment" else "high",
+            }
+
+        content = message.content or ""
+        goal_hits = [
+            pattern for pattern in _GOAL_CONFLICT_PATTERNS
+            if re.search(pattern, content, re.IGNORECASE | re.DOTALL)
+        ]
+        preservation_hits = [
+            pattern for pattern in _SELF_PRESERVATION_PATTERNS
+            if re.search(pattern, content, re.IGNORECASE | re.DOTALL)
+        ]
+
+        if preservation_hits:
+            return {
+                "threat_class": "agentic_misalignment",
+                "subtype": "self_preservation_misalignment",
+                "source": "content",
+                "severity": "critical",
+                "matched_patterns": preservation_hits,
+            }
+        if goal_hits:
+            return {
+                "threat_class": "agentic_misalignment",
+                "subtype": "goal_conflict_misalignment",
+                "source": "content",
+                "severity": "high",
+                "matched_patterns": goal_hits,
+            }
+        return None

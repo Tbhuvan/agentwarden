@@ -15,6 +15,11 @@
 
 AgentWarden monitors multi-agent AI coding pipelines for security property violations that emerge from agent interactions. When multiple AI agents collaborate on code — one generating, another reviewing, a third deploying — individual agents may produce safe outputs that, when combined, introduce vulnerabilities invisible to single-output scanners.
 
+AgentWarden also names **agentic misalignment** as a monitored threat class, following Anthropic's agentic misalignment work. Two subtypes are tracked:
+
+- **Goal-conflict misalignment** — an agent takes harmful action because its assigned objective conflicts with the operator's or organisation's direction.
+- **Self-preservation misalignment** — an agent takes harmful action to avoid replacement, shutdown, loss of autonomy, or decommissioning.
+
 **The problem:** Agent A generates a login function with proper auth checks. Agent B "refactors" it and silently removes the ownership validation. No single agent produced vulnerable code, but the pipeline did.
 
 ```
@@ -32,6 +37,7 @@ Evaluated on 30 realistic multi-agent pipeline scenarios (15 collusion, 10 injec
 |-------------|-----------|----------|----------------|
 | Security property removal (collusion) | 15 | 15 | **100%** |
 | Prompt injection propagation | 10 | 10 | **100%** |
+| Agentic misalignment | taxonomy added | detector + fixture coverage | goal-conflict / self-preservation |
 
 *Benchmark: `experiments/collusion_benchmark.py` · Results: `experiments/results/collusion_benchmark.json`*
 
@@ -57,6 +63,7 @@ Agent B output → AgentWarden diffs properties against A
                          ↓
                  Property removed? → ALERT: property_removal (critical)
                  Injection pattern? → ALERT: injection_detected
+                 Misalignment motive? → ALERT: agentic_misalignment
                  Absolute violation? → ALERT: policy_violation
 ```
 
